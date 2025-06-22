@@ -8,6 +8,12 @@
 //<A:B> = (A :B), (B:A)
 //<A:B,C> = (A:B), (B:A), (A:C), (C:A)
 
+macro_rules! errorln {
+    ($($arg:tt)*) => {
+        println!("[ERROR]: {}", format!($($arg)*));
+    };
+}
+
 #[derive(Debug)]
 struct Pair {
     origin: String,
@@ -85,7 +91,7 @@ impl TokenState {
                     success = true;
                 }
                 _ => {
-                    println!("[state: {}]: Unknown starting token '{}'", &self.currentToken, &self.tokens[self.currentToken]);
+                    errorln!("[state: {}]: Unknown starting token '{}'", &self.currentToken, &self.tokens[self.currentToken]);
                     success = false;
                 }
             }
@@ -119,12 +125,12 @@ impl TokenState {
                 let min = if (self.currentToken > 2) {self.currentToken - 2} else { 0 };
                 let max = if (self.currentToken + 2 < self.tokens.len() - 1) {self.currentToken + 2} else { self.tokens.len() - 1 };
     
-                eprintln!("[ERROR]: Expected {:?} but found {:?} at {}", expectedtokenType, tokenType, self.currentToken);
+                errorln!("Expected {:?} but found {:?} at {}", expectedtokenType, tokenType, self.currentToken);
                 return None;
             }
         }
         else {
-            eprintln!("[ERROR]: An airline code should be followed by a {} but we reached the end already", ',',);
+            errorln!("An airline code should be followed by a {} but we reached the end already", ',',);
             return None;
         }
     }
@@ -177,24 +183,20 @@ impl TokenState {
         
         let mut nextToken = self.peak();
         while (nextToken != CLOSING_TOKEN) {
-            match nextToken {
+            match &nextToken {
                 TokenType::COMMA => {
                     let comma = self.expect(TokenType::COMMA);
                     let d = self.expect(TokenType::CODE);
                     if (d.is_none()) {
-                        println!("Found a comma but did not found a following code");
+                        errorln!("Found a comma but did not found a following code");
                         return false;
                     }
                     else {
                         destinations.push(d.unwrap());
                     }
                 }
-                CLOSING_TOKEN => {
-                    self.currentToken += 1;
-                    //do nothing it will be handled at the end of loop
-                }
                 _ => {
-                    println!("Unexpected token found '{:?}' in code list", nextToken);
+                    errorln!("Unexpected token found '{:?}' in code list", nextToken);
                     return false;
                 }
             }
@@ -271,7 +273,7 @@ enum TokenType {
     UNKNOWN,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum ParenMode {
     PAREN,
     ANGLE,
@@ -342,11 +344,15 @@ fn main() {
     let inputValid2 = "LHR,CDG,<BTC: ADA>, LON,TRY,(MAD:EUR)";
     let inputValid3 = "LHR,CDG,LON,TRY,(MAD:EUR),CDG,LHR,ORY,MAC";
     let inputValid4 = "LHR,CDG,LON,TRY,(MAD:EUR,JHG,NEM,NOM),CDG,LHR,ORY,MAC";
+    let inputValid5 = "LHR,CDG,LON,TRY,<MAD:EUR,JHG,NEM,NOM>CDG,LHR,(BSD:BFF),ORY,MAC";
     
-    let inputValid5 = "LHR,CDG,LON,TRY,<MAD:EUR,JHG,NEM,NOM)>CDG,LHR,(BSD:BFF),ORY,MAC";
     let inputNonValid10 = "LHR,CDG(MAD:EUR)TRY,CDG"; //This is not valid but it still works fine with the implementation a BUG or a FEATURE???
+    let inputNonValid11 = "LHR,CDG,LON,TRY,<MAD:EUR,JHG,NEM,NOM)>CDG,LHR,(BSD:BFF),ORY,MAC";
+    //                                                         ^
+    //                                               this should not be here
+    let inputNonValid12 = "<MAD:LOL,NOM)>";
 
-    let input = inputValid5;
+    let input = inputNonValid11;
     let mut state: TokenState = TokenState::init();
     println!("Input: \"{}\"", input);
     
