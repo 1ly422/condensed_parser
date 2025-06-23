@@ -15,6 +15,9 @@ The parser support two type of syntaxes, a simple one and modern one.
 "<A:B>"   = A -> B, B -> A
 "(A:B,C)" = A -> B, A -> C
 "<A:B,C>" = A -> B, A -> C, B -> A, C -> A
+// Condensed syntax uses less chars than the modern one
+"A>B,C;"  = "(A:B,C)"
+"A=B,C;"  = "<A:B,C>"
 ```
 ### Example
 In simple syntax a code should always be followed by its pair
