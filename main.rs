@@ -43,7 +43,7 @@ impl TokenState {
         
         for ch in input.chars() {
             match ch {
-                ',' | '<' | '>' | '(' | ')' | ':' => {
+                ',' | '<' | '>' | '(' | ')' | ':' | '=' | ';' => {
                     // if we have accumulated letters, push them first
                     if !current.is_empty() {
                         self.tokens.push(current.clone());
@@ -84,7 +84,7 @@ impl TokenState {
                 }
                 TokenType::CODE => {
                     println!("Legacy parsing");
-                    success = self.parse_legacy_style();
+                    success = self.parse_code_style();
                 }
                 TokenType::COMMA => {
                     //do nothing it should go to next token if available
@@ -139,7 +139,7 @@ impl TokenState {
         if (self.currentToken + 1 < self.tokens.len()) {
             return to_token_type(&self.tokens[self.currentToken + 1]);
         }
-        return TokenType::UNKNOWN;
+        return TokenType::EOF;
     }
     
     fn parse_legacy_style(self: &mut Self) -> bool {
@@ -157,8 +157,94 @@ impl TokenState {
         }
         return false;
     }
+
+    fn parse_code_style(self: &mut Self) -> bool {
+        
+        let nextToken = self.peak();
+        match &nextToken {
+            TokenType::COMMA => {
+                return self.parse_legacy_style();
+            }
+            
+            TokenType::EQUAL | TokenType::CLOSING_ANGLE => {
+                return self.parse_condensed_style(nextToken);
+            }
+            
+            other => {
+                let origin = self.current();
+                eprintln!("Unexpected token found after code '{}'. Token {:?} was found whereas only ',', '=', '>' is expected", &origin, &other);
+                return false;
+            }
+        }
+
+    }
     
+    fn parse_condensed_style(self: &mut Self, tokenType: TokenType) -> bool {
+        let origin = self.current().clone();
+        let _ = self.expect(tokenType.clone());
+                
+        let mut destinations: Vec<String> = Vec::new();
+        let d = self.expect(TokenType::CODE);
+        if (d.is_none()) {
+            return false;
+        }
+        else {
+            destinations.push(d.unwrap());
+        }
+        
+        let mut nextToken = self.peak();
+        while (nextToken != TokenType::SEMI_COLON) {
+            match &nextToken {
+                TokenType::COMMA => {
+                    let comma = self.expect(TokenType::COMMA);
+                    let d = self.expect(TokenType::CODE);
+                    if (d.is_none()) {
+                        errorln!("Found a comma but did not found a following code");
+                        return false;
+                    }
+                    else {
+                        destinations.push(d.unwrap());
+                    }
+                }
+                _ => {
+                    errorln!("Unexpected token found '{:?}' whereas a ',' or ';' are expected", nextToken);
+                    return false;
+                }
+            }
+            nextToken = self.peak(); 
+        }
+    
+        let closingParen = self.expect(TokenType::SEMI_COLON);
+        if (closingParen.is_none()) {
+            return false;
+        }
+
+        println!("destination: {:?}", destinations);
+
+        match &tokenType {
+            TokenType::EQUAL => {
+                for d in destinations.iter() {
+                    self.add(&origin, d);
+                    self.add(d, &origin);
+                }
+            }
+
+            TokenType::CLOSING_ANGLE => {
+                for d in destinations.iter() {
+                    self.add(&origin, d);
+                }     
+            }
+            _ => {
+                errorln!("Only EQUAL or CLOSING_ANGLE behavior is supported for condensed syntax");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     fn parse_new_style(self: &mut Self, mode: ParenMode) -> bool {
+    
         let CLOSING_TOKEN = mode.closing_token();
         let _ = self.current().clone();
     
@@ -258,7 +344,7 @@ fn is_alpha(t: &String) -> bool {
     return true;
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 enum TokenType {
     COMMA,
     CODE,
@@ -266,11 +352,14 @@ enum TokenType {
     OPEN_PAREN,
     OPEN_ANGLE,
 
-
     CLOSING_PAREN,
     CLOSING_ANGLE,
 
+    EQUAL,
+    SEMI_COLON,
+
     UNKNOWN,
+    EOF,
 }
 
 #[derive(PartialEq, Debug)]
@@ -322,6 +411,12 @@ fn to_token_type(t: &String) -> TokenType {
     else if (t == ">") {
         return TokenType::CLOSING_ANGLE;
     }
+    else if (t == "=") {
+        return TokenType::EQUAL;
+    }
+    else if (t == ";") {
+        return TokenType::SEMI_COLON;
+    }
     else if (is_alpha(t) && is_upper(t)) {
         return TokenType::CODE;
     }
@@ -345,22 +440,32 @@ fn main() {
     let inputValid3 = "LHR,CDG,LON,TRY,(MAD:EUR),CDG,LHR,ORY,MAC";
     let inputValid4 = "LHR,CDG,LON,TRY,(MAD:EUR,JHG,NEM,NOM),CDG,LHR,ORY,MAC";
     let inputValid5 = "LHR,CDG,LON,TRY,<MAD:EUR,JHG,NEM,NOM>CDG,LHR,(BSD:BFF),ORY,MAC";
+
+    let inputValid6 = "LHR,CDG,LON,TRY,MAD=EUR,JHG,NEM,NOM;CDG,LHR,BSD>BFF;ORY,MAC";
     
     let inputNonValid10 = "LHR,CDG(MAD:EUR)TRY,CDG"; //This is not valid but it still works fine with the implementation a BUG or a FEATURE???
     let inputNonValid11 = "LHR,CDG,LON,TRY,<MAD:EUR,JHG,NEM,NOM)>CDG,LHR,(BSD:BFF),ORY,MAC";
     //                                                         ^
     //                                               this should not be here
     let inputNonValid12 = "<MAD:LOL,NOM)>";
-
-    let input = inputNonValid11;
-    let mut state: TokenState = TokenState::init();
-    println!("Input: \"{}\"", input);
     
-    state.parse(input);
+    let inputNonValid13 = "MAD>BND,JYL;";
+    let inputNonValid14 = "MAD>BND,JYL;GRL=EAD,EFF<FRL:DZA>";
+    let inputNonValid15 = "<MAD:LOL,NOM)>";
 
-    println!("//////////////// Results ////////////////\n");
+    //let input = inputValid6;
+    let tab = vec![inputNonValid13, inputNonValid14, inputNonValid15];
 
-    for p in state.result.iter() {
-        println!("{} -> {}", p.origin, p.destination);
+    for input in tab {
+        let mut state: TokenState = TokenState::init();
+        println!("Input: \"{}\"", input);
+        
+        state.parse(input);
+        
+        println!("//////////////// Results ////////////////\n");
+        
+        for p in state.result.iter() {
+            println!("{} -> {}", p.origin, p.destination);
+        }
     }
 }
